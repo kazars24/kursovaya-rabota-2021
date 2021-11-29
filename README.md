@@ -1,1 +1,1 @@
-# kursovaya_rabota_2021
+# kursovaya-rabota-2021
