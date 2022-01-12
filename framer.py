@@ -2,7 +2,6 @@ import os
 import argparse
 import sys
 import enum
-import numpy as np
 import cv2 as cv
 
 import ffmpeg
@@ -46,7 +45,6 @@ def main():
     parser = argparse.ArgumentParser(prog=script.name)
     parser.add_argument('-i', '--input', required=True, help='Path to video')
     parser.add_argument('-o', '--output', required=True, help='Output dir (.txt if --numpy)')
-    parser.add_argument('-np', '--numpy', required=False, action='store_true', help='Transform to nparray')
 
     args = parser.parse_args()
     try:
@@ -62,43 +60,32 @@ def main():
         width = int(video_stream['width'])
         height = int(video_stream['height'])
 
-        if args.numpy:
-            out, _ = (
+        for sec in range(duration):
+            out, err = (
                 ffmpeg
-                    .input(args.input)
-                    .output('pipe:', format='rawvideo', pix_fmt='rgb24')
+                    .input(args.input, ss=sec)
+                    # .filter_('select', 'gte(n,{})'.format(frame_num))
+                    .output(f"{args.output}/{filename}-{sec}.png", vframes=1, format='image2', vcodec='mjpeg')
                     .run(capture_stdout=True)
             )
-            video = (
-                np
-                    .frombuffer(out, np.uint8)
-                    .reshape([-1, height, width, 3])
-            )
-            if output_path.is_dir():
-                output_path = output_path / f"{filename}.txt"
-            with open(output_path, 'w+') as handle:
-                handle.write(video)
-        else:
-            for sec in range(duration):
-                out, err = (
-                    ffmpeg
-                        .input(args.input, ss=sec)
-                        # .filter_('select', 'gte(n,{})'.format(frame_num))
-                        .output(f"{args.output}/{filename}-{sec}.jpg", vframes=1, format='image2', vcodec='mjpeg')
-                        .run(capture_stdout=True)
-                )
-                print(err)
-            """out, _ = (
-                ffmpeg
-                .input(args.input)
-                .filter('fps')
-                .output(f"{args.output}/{filename}-%d.jpg", start_number=0, vframes=1, format='image2', vcodec='mjpeg')
-                .overwrite_output()
-                .run(quiet=True)
-            )"""
+            print(err)
+        """out, _ = (
+            ffmpeg
+            .input(args.input)
+            .filter('fps')
+            .output(f"{args.output}/{filename}-%d.jpg", start_number=0, vframes=1, format='image2', vcodec='mjpeg')
+            .overwrite_output()
+            .run(quiet=True)
+        )"""
     except Exception as ex:
-        raise (ex)
+        raise ex
         exit_code = ReturnCode.CRITICAL
+
+    files = os.listdir(output_path)
+    for image in files:
+        output = f"{output_path}/{image[0:-4]}.txt"
+        ml_module(f"{output_path}/{image}", output)
+        print(image, 'detected!')
 
     return exit_code.value
 
