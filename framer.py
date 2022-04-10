@@ -10,8 +10,9 @@ import ffmpeg
 from pathlib import Path
 from threading import Thread
 
-
 frames_list = []
+WIDTH = 0
+HEIGHT = 0
 
 
 class ReturnCode(enum.Enum):
@@ -20,7 +21,7 @@ class ReturnCode(enum.Enum):
 
 
 def ffmpeg_for_threading(path_to_video):
-    global frames_list
+    global frames_list, WIDTH, HEIGHT
 
     print('ffmpeg: video processing started')
     ffmpeg_start_time = time.time()
@@ -32,8 +33,8 @@ def ffmpeg_for_threading(path_to_video):
         # Video params
         probe = ffmpeg.probe(path_to_video)
         video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-        width = int(video_stream['width'])
-        height = int(video_stream['height'])
+        WIDTH = int(video_stream['width'])
+        HEIGHT = int(video_stream['height'])
 
         # ffmpeg command
         command = ['ffmpeg',
@@ -43,18 +44,18 @@ def ffmpeg_for_threading(path_to_video):
                    'pipe:']
 
         # Execute FFmpeg as sub-process with stdout as a pipe
-        process = sp.Popen(command, stdout=sp.PIPE, stderr=sp.STDOUT) #stdout
+        process = sp.Popen(command, stdout=sp.PIPE, stderr=sp.STDOUT)  # stdout
 
         # Read decoded video frames from the PIPE until no more frames to read
         while True:
             # Read decoded video frame (in raw video format) from stdout process.
-            buffer = process.stdout.read(width * height * 3)
+            buffer = process.stdout.read(WIDTH * HEIGHT * 3)
 
             # Break the loop if buffer length is not W*H*3 (when FFmpeg streaming ends).
-            if len(buffer) != width * height * 3:
+            if len(buffer) != WIDTH * HEIGHT * 3:
                 break
 
-            img = np.frombuffer(buffer, np.uint8).reshape(height, width, 3)
+            img = np.frombuffer(buffer, np.uint8).reshape(HEIGHT, WIDTH, 3)
             frames_list.append(img)
 
         print("ffmpeg: processing was completed in %s seconds" % (time.time() - ffmpeg_start_time))
@@ -64,10 +65,12 @@ def ffmpeg_for_threading(path_to_video):
 
 
 def ml_module(frame, path_to_coordinates):
+    global WIDTH, HEIGHT
+
     classes_for_task = ['person', 'car', 'bus', 'truck']
 
     net = cv.dnn_DetectionModel('ml_cfg/yolov4.cfg', 'ml_cfg/yolov4.weights')
-    net.setInputSize(700, 700)
+    net.setInputSize(WIDTH - (WIDTH % 32), HEIGHT - (HEIGHT % 32))
     net.setInputScale(1.0 / 255)
     net.setInputSwapRB(True)
 
@@ -76,8 +79,7 @@ def ml_module(frame, path_to_coordinates):
 
     classes, confidences, boxes = net.detect(frame, confThreshold=0.4, nmsThreshold=0.4)
 
-    if len(classes) > 0:
-        objects = [[names[x[0]], x[1]] for x in zip(classes.flatten(), boxes)]
+    objects = [[names[x[0]], x[1]] for x in zip(classes.flatten(), boxes)]
     for x in objects:
         if x[0] not in classes_for_task:
             objects.remove(x)
@@ -92,7 +94,7 @@ def ml_for_treating(output_path):
     print('model: frame processing started')
     model_start_time = time.time()
 
-    path = Path(output_path)
+    # path = Path(output_path)
     coordinates_path = Path(f"{output_path}/coordinates")
     if not coordinates_path.exists():
         coordinates_path.mkdir(parents=True)
@@ -118,7 +120,7 @@ def postproc(path_to_coordinates, base_qp):
     postproc_start_time = time.time()
 
     folder = Path(f"{path_to_coordinates}/coordinates")
-    folder_len = sum(1 for x in folder.iterdir())
+    folder_len = sum(1 for _ in folder.iterdir())
     all_regions = []
     for i in range(folder_len):
         path_to_file = path_to_coordinates + f"/coordinates/frame-{i}.txt"
