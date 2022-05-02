@@ -109,7 +109,7 @@ def ml_for_treating(output_path):
     print("model: processing was completed in %s seconds" % (time.time() - model_start_time))
 
 
-def postproc(path_to_coordinates, base_qp):
+def postproc(path_to_coordinates, roi_qp):
     print('postproc: started')
     postproc_start_time = time.time()
 
@@ -123,7 +123,7 @@ def postproc(path_to_coordinates, base_qp):
             objects = f.read().splitlines()
         objects = [list(map(int, x.split(' '))) for x in objects]
 
-        regions = [f"{x[0]},{x[1]},{x[0] + x[2]},{x[1] + x[3]}:{base_qp}" for x in objects]
+        regions = [f"{x[0]},{x[1]},{x[0] + x[2]},{x[1] + x[3]}:{roi_qp}" for x in objects]
         regions = ' '.join(regions)
         all_regions.append(regions)
 
@@ -132,7 +132,7 @@ def postproc(path_to_coordinates, base_qp):
     return ' '.join(all_regions)
 
 
-def encoder(path_to_video, regions):
+def encoder(path_to_video, regions, frame_num, base_qp):
     print('encoder: started')
     encoder_start_time = time.time()
 
@@ -141,7 +141,7 @@ def encoder(path_to_video, regions):
     process1 = sp.run(command1, shell=True, stdout=sp.PIPE, stderr=sp.STDOUT)
 
     path_to_roi = f'{path_to_h264[:-5]}_roi.h264'
-    command2 = f"h264-roi-build/h264_roi {path_to_h264} {path_to_roi} -c 251 -q 50 {regions}"
+    command2 = f"h264-roi-build/h264_roi {path_to_h264} {path_to_roi} -c {frame_num} -q {base_qp} {regions}"
     # print(command2)
     process2 = sp.run(command2, shell=True, stdout=sp.PIPE, stderr=sp.STDOUT)
 
@@ -156,10 +156,18 @@ def main():
 
     parser = argparse.ArgumentParser(prog=script.name)
     parser.add_argument('-i', '--input', required=True, help='Path to video')
-    parser.add_argument('-o', '--output', required=True, help='Output dir (.txt if --numpy)')
+    parser.add_argument('-o', '--output', required=True, help='Output dir')
+    parser.add_argument('-c', '--frame_num', required=True, help='Number of frames')
+    parser.add_argument('-q', '--base_qp', required=True, help='Quantizer value from 0 to 51')
+    parser.add_argument('-r', '--roi_qp', required=True, help='ROI quantizer value')
 
     args = parser.parse_args()
     output_path = Path(args.output)
+
+    print(f"Input video: {args.input}")
+    print(f"Output video: {f'{args.input[:-4]}_roi.h264'}")
+    print(f"Base QP = {args.base_qp}")
+    print(f"ROI QP = {args.roi_qp}")
 
     thread1 = Thread(target=ffmpeg_for_threading, args=(args.input, output_path))
     thread2 = Thread(target=ml_for_treating, args=(output_path,))
@@ -170,9 +178,9 @@ def main():
     thread1.join()
     thread2.join()
 
-    regions = postproc(args.output, 0)
+    regions = postproc(args.output, args.roi_qp)
 
-    encoder(args.input, regions)
+    encoder(args.input, regions, args.frame_num, args.base_qp)
 
     print("Pipeline finished in %s seconds" % (time.time() - start_time))
 
@@ -181,8 +189,8 @@ def main():
     print(f'- file size: {og_stat_size} bytes')
     probe = ffmpeg.probe(args.input)
     video_stream = next(s for s in probe['streams'] if s['codec_type'] == 'video')
-    bitrate = int(int(video_stream['bit_rate']))
-    print(f'- bit rate: {bitrate} bit/s')
+    bit_rate = int(int(video_stream['bit_rate']))
+    print(f'- bit rate: {bit_rate} bit/s')
     w = int(video_stream['width'])
     h = int(video_stream['height'])
     print(f'- resolution: {w}x{h}')
@@ -192,8 +200,8 @@ def main():
     print(f'- file size: {roi_stat_size} bytes')
     probe = ffmpeg.probe(f'{args.input[:-4]}_roi.h264')
     video_stream = next(s for s in probe['streams'] if s['codec_type'] == 'video')
-    # bitrate = int(int(video_stream['bit_rate']))
-    # print(f'- bit rate: {bitrate} bit/s')
+    # bit_rate = int(int(video_stream['bit_rate']))
+    # print(f'- bit rate: {bit_rate} bit/s')
     w = int(video_stream['width'])
     h = int(video_stream['height'])
     print(f'- resolution: {w}x{h}')
