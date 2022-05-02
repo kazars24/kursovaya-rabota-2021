@@ -27,3 +27,4 @@ RUN apt-get update && \
     apt -y install python3-pip && \
     pip install numpy && \
     pip install opencv-python --upgrade && \
+    pip install ffmpeg-python
