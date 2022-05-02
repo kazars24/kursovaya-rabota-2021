@@ -173,7 +173,7 @@ def main():
     thread2 = Thread(target=ml_for_treating, args=(output_path,))
 
     thread1.start()
-    time.sleep(5)
+    time.sleep(0)
     thread2.start()
     thread1.join()
     thread2.join()
