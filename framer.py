@@ -35,7 +35,7 @@ def ffmpeg_for_threading(path_to_video, path_to_outputs):
 
         command = ['ffmpeg',
                    '-i', path_to_video,
-                   f'{path_to_outputs}/%03d.jpg'
+                   f'{path_to_outputs}/%05d.jpg'
                    ]
         process = sp.Popen(command, stdout=sp.PIPE, stderr=sp.STDOUT)
 
@@ -76,13 +76,18 @@ def ml_module(path_to_img, path_to_coordinates):
 
     classes, confidences, boxes = net.detect(frame, confThreshold=0.4, nmsThreshold=0.4)
 
-    objects = [[names[x[0]], x[1]] for x in zip(classes.flatten(), boxes)]
-    for x in objects:
-        if x[0] not in classes_for_task:
-            objects.remove(x)
+    if len(classes) > 0:
+        objects = [[names[x[0]], x[1]] for x in zip(classes.flatten(), boxes)]
+        target_objects = []
+        for x in objects:
+            if x[0] in classes_for_task:
+                target_objects.append(x)
 
-    with open(path_to_coordinates, "w") as f:
-        f.write("\n".join(" ".join(map(str, x[1])) for x in objects))
+        with open(path_to_coordinates, "w") as f:
+            f.write("\n".join(" ".join(map(str, x[1])) for x in target_objects))
+    else:
+        with open(path_to_coordinates, "w") as f:
+            pass
 
 
 def ml_for_treating(output_path):
@@ -98,13 +103,12 @@ def ml_for_treating(output_path):
 
     files = os.listdir(output_path)
     files.remove('coordinates')
-    index = 1
+    files.sort()
     for image in files:
-        output = f"{output_path}/coordinates/frame-{index}.txt"
+        output = f"{output_path}/coordinates/frame-{int(image[:-4])}.txt"
         frame_start_time = time.time()
         ml_module(f"{output_path}/{image}", output)
-        print(f"model: frame-{index} processing ended (%s sec)" % (time.time() - frame_start_time))
-        index += 1
+        print(f"model: frame-{int(image[:-4])} processing ended (%s sec)" % (time.time() - frame_start_time))
 
     print("model: processing was completed in %s seconds" % (time.time() - model_start_time))
 
@@ -123,9 +127,10 @@ def postproc(path_to_coordinates, roi_qp):
             objects = f.read().splitlines()
         objects = [list(map(int, x.split(' '))) for x in objects]
 
-        regions = [f"{x[0]},{x[1]},{x[0] + x[2]},{x[1] + x[3]}:{roi_qp}" for x in objects]
-        regions = ' '.join(regions)
-        all_regions.append(regions)
+        if len(objects) > 0:
+            regions = [f"{x[0]},{x[1]},{x[0] + x[2]},{x[1] + x[3]}:{roi_qp}" for x in objects]
+            regions = ' '.join(regions)
+            all_regions.append(regions)
 
     print("postproc: processing was completed in %s seconds" % (time.time() - postproc_start_time))
 
@@ -173,7 +178,7 @@ def main():
     thread2 = Thread(target=ml_for_treating, args=(output_path,))
 
     thread1.start()
-    time.sleep(0)
+    time.sleep(1)
     thread2.start()
     thread1.join()
     thread2.join()
